@@ -53,11 +53,19 @@ def ail_publish(apikey, manifest_file, file_name, data=None):
         if "status" in ail_response.text:
             if data.get("status") == "success":
                 print(file_name + ": Successfully Pushed to Ail")
-                file_by_number = re.findall(r"[-+]?\d*\.\d+|\d+", file_name.split('_')[1])
-                file_to_del = file_name.split('_')[0] + "_" + str(int(file_by_number[0]) - 1)
-                filepath = os.path.join(os.path.dirname(os.path.realpath(manifest_file)), file_to_del)
-                if os.path.exists(filepath):
-                    os.unlink(os.path.join(os.path.dirname(os.path.realpath(manifest_file)), file_to_del))
+                
+                # Delete the split file if configured
+                if CONFIG.delete_splits_after_processing:
+                    file_by_number = re.findall(r"[-+]?\d*\.\d+|\d+", file_name.split('_')[1])
+                    file_to_del = file_name.split('_')[0] + "_" + str(int(file_by_number[0]) - 1)
+                    filepath = os.path.join(os.path.dirname(os.path.realpath(manifest_file)), file_to_del)
+                    if os.path.exists(filepath):
+                        try:
+                            os.unlink(filepath)
+                            print(f"[CLEANUP] Deleted split: {file_to_del}")
+                        except Exception as e:
+                            print(f"[ERROR] Could not delete {file_to_del}: {e}")
+                
                 remove_split_manifest(manifest_file, "filename", file_name)
                 return True
             if data.get("status") == "error":
@@ -197,9 +205,19 @@ def folder_cleaner(path):
     """
     for root, dirs, files in os.walk(path):
         for f in files:
-            os.unlink(os.path.join(root, f))
+            try:
+                os.unlink(os.path.join(root, f))
+                if CONFIG.delete_splits_after_processing:
+                    print(f"[CLEANUP] Deleted: {f}")
+            except Exception as e:
+                print(f"[ERROR] Could not delete {f}: {e}")
         for d in dirs:
-            shutil.rmtree(os.path.join(root, d))
+            try:
+                shutil.rmtree(os.path.join(root, d))
+                if CONFIG.delete_splits_after_processing:
+                    print(f"[CLEANUP] Deleted directory: {d}")
+            except Exception as e:
+                print(f"[ERROR] Could not delete directory {d}: {e}")
 
 
 def update_leak_list():
@@ -260,6 +278,7 @@ def move_new_leak():
         leak_destination_path = os.path.join(cur_dir, CONFIG.out_folder)
         if os.path.exists(leak_source_path):
             new_location = shutil.move(leak_source_path, leak_destination_path)
+            print(f"[MOVE] {file_name} -> {CONFIG.out_folder}")
             with open(current_leak_filename, "w") as file:
                 file.write(new_location)
                 file.close()
@@ -305,6 +324,7 @@ def run():
                     cur_leak_path = os.path.join(cur_dir, current_leak_filename)
                     if os.path.exists(cur_leak_path):
                         os.remove(cur_leak_path)
+                        print("[CLEANUP] Removed current_leak.txt")
                     
                     # Remove the processed leak from leak_list.csv
                     leak_list_path = os.path.join(cur_dir, leak_list_filename)
@@ -363,6 +383,8 @@ if __name__ == "__main__":
     args_parser.add('-u', '--ail_url', help='AIL API URL.')
     args_parser.add('-i', '--uuid', help='Uniq identifier of the feeder.')
     args_parser.add('-w', '--wait', type=float, help='Time sleep between API calls in seconds.')
+    args_parser.add('-d', '--delete_splits_after_processing', action='store_true', 
+                    help='Delete split files after successful processing (default: False).')
 
     options = args_parser.parse_args()
     CONFIG = options
