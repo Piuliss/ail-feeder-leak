@@ -165,9 +165,11 @@ def file_worker(leak_name, dir_path):
     manifest_file = os.path.join(dir_path, manifest_filename)
     if not os.path.isdir(dir_path):
         print("Input directory is not a valid directory")
+        return
 
     if not os.path.exists(manifest_file):
         print("Unable to locate manifest file")
+        return
 
     print("Processing data from splits")
     with open(file=manifest_file, mode="r", encoding="utf-8") as reader:
@@ -184,7 +186,9 @@ def file_worker(leak_name, dir_path):
                     file_sha256 = hashlib.sha256(f.read(file_size)).hexdigest()
                 ail(leak_name, file_name, file_sha256, file_lines, manifest_file)
                 Event().wait(CONFIG.wait)
-    run()
+    
+    # Don't call run() here - let the caller handle flow control
+    return
 
 
 def folder_cleaner(path):
@@ -245,7 +249,13 @@ def move_new_leak():
     if update_leak_list():
         cur_dir = os.path.dirname(os.path.realpath(__file__))
         leak_list = os.path.join(cur_dir, leak_list_filename)
-        file_name = ((pd.read_csv(leak_list).values[0]).tolist())[0]
+        
+        # Fix: handle empty leak_list.csv safely
+        df = pd.read_csv(leak_list)
+        if df.empty:
+            return False
+        
+        file_name = df.iloc[0, 0]
         leak_source_path = os.path.join(cur_dir, CONFIG.leaks_folder, file_name)
         leak_destination_path = os.path.join(cur_dir, CONFIG.out_folder)
         if os.path.exists(leak_source_path):
@@ -268,6 +278,7 @@ def run():
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     manifest_file = os.path.join(cur_dir, unprocessed_leaks, manifest_filename)
     chunk_size = CONFIG.chunks
+    
     if not os.path.isdir(leaks_folder):
         os.makedirs(leaks_folder)
 
@@ -289,7 +300,35 @@ def run():
                 if df.empty:
                     print("Cleaning from the last task")
                     folder_cleaner(os.path.join(cur_dir, unprocessed_leaks))
-                    run()
+                    
+                    # Fix: clean state and exit instead of recursing
+                    cur_leak_path = os.path.join(cur_dir, current_leak_filename)
+                    if os.path.exists(cur_leak_path):
+                        os.remove(cur_leak_path)
+                    
+                    # Remove the processed leak from leak_list.csv
+                    leak_list_path = os.path.join(cur_dir, leak_list_filename)
+                    if os.path.exists(leak_list_path):
+                        df_leaks = pd.read_csv(leak_list_path)
+                        if not df_leaks.empty:
+                            df_leaks = df_leaks.iloc[1:]  # Remove first row
+                            df_leaks.to_csv(leak_list_path, index=False)
+                    
+                    print("Task finished (manifest empty). Checking for more leaks...")
+                    
+                    # Check if there are more leaks to process
+                    if update_leak_list():
+                        print("Found more leaks, continuing...")
+                        if move_new_leak():
+                            leak_name = open(current_leak_filename, "r+").read()
+                            split(leak_name, chunk_size)
+                        else:
+                            print("No more leaks to process")
+                            end_time()
+                    else:
+                        print("No more leaks to process")
+                        end_time()
+                    return
                 else:
                     print("Processing from the last task")
                     leak_name = open(current_leak_filename, "r+").read()
@@ -302,8 +341,8 @@ def run():
                 else:
                     if os.path.exists(os.path.join(cur_dir, current_leak_filename)):
                         os.remove(os.path.join(cur_dir, current_leak_filename))
-                    if os.path.exists(os.path.join(cur_dir, "leak_list.txt")):
-                        os.remove(os.path.join(cur_dir, "leak_list.txt"))
+                    if os.path.exists(os.path.join(cur_dir, leak_list_filename)):
+                        os.remove(os.path.join(cur_dir, leak_list_filename))
                     print("No more leaks to process")
                     end_time()
     else:
