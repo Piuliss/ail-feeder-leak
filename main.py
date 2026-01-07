@@ -229,15 +229,17 @@ def update_leak_list():
     cur_dir = os.path.join(dirname.resolve().parent, CONFIG.leaks_folder)
     unprocessed_folder = os.path.join(dirname.resolve().parent, CONFIG.out_folder)
 
-    if not os.listdir(cur_dir):
-        cur_dir = os.path.dirname(os.path.realpath(__file__))
-        manifest_file = os.path.join(cur_dir, CONFIG.out_folder, manifest_filename)
+    # Check if leaks_folder is empty
+    if not os.path.exists(cur_dir) or not os.listdir(cur_dir):
+        # If leaks folder is empty, check if there's an ongoing task
+        manifest_file = os.path.join(dirname.resolve().parent, CONFIG.out_folder, manifest_filename)
         if os.path.exists(manifest_file):
             df = pd.read_csv(manifest_file)
             if df.empty:
                 return False
             else:
                 return True
+        return False
 
     list_of_files = get_list_of_files(cur_dir, unprocessed_folder)
     print(f"list_of_files: {list_of_files}")
