@@ -286,6 +286,64 @@ def move_new_leak():
     return result
 
 
+def cleanup_after_processing(cur_dir, unprocessed_leaks):
+    """
+    Clean up after successfully processing a leak
+    """
+    print("Cleaning from the last task")
+    
+    # Delete the original leak file if configured
+    if CONFIG.delete_splits_after_processing:
+        current_leak_path = os.path.join(cur_dir, current_leak_filename)
+        if os.path.exists(current_leak_path):
+            leak_name_path = open(current_leak_path, "r").read()
+            if os.path.exists(leak_name_path):
+                try:
+                    os.unlink(leak_name_path)
+                    print(f"[CLEANUP] Deleted original leak: {os.path.basename(leak_name_path)}")
+                except Exception as e:
+                    print(f"[ERROR] Could not delete original leak: {e}")
+    
+    # Clean any remaining files in unprocessed_split
+    folder_cleaner(os.path.join(cur_dir, unprocessed_leaks))
+    
+    # Clean state files
+    cur_leak_path = os.path.join(cur_dir, current_leak_filename)
+    if os.path.exists(cur_leak_path):
+        os.remove(cur_leak_path)
+        print("[CLEANUP] Removed current_leak.txt")
+    
+    # Remove the processed leak from leak_list.csv
+    leak_list_path = os.path.join(cur_dir, leak_list_filename)
+    if os.path.exists(leak_list_path):
+        df_leaks = pd.read_csv(leak_list_path)
+        if not df_leaks.empty:
+            df_leaks = df_leaks.iloc[1:]  # Remove first row
+            df_leaks.to_csv(leak_list_path, index=False)
+    
+    print("Task finished (manifest empty). Checking for more leaks...")
+    
+    # Check if there are more leaks to process
+    if update_leak_list():
+        print("Found more leaks, continuing...")
+        if move_new_leak():
+            leak_name = open(os.path.join(cur_dir, current_leak_filename), "r+").read()
+            manifest_file = os.path.join(cur_dir, unprocessed_leaks, manifest_filename)
+            split(leak_name, CONFIG.chunks)
+            
+            # Recursively check again after processing
+            if os.path.exists(manifest_file):
+                df = pd.read_csv(manifest_file)
+                if df.empty:
+                    cleanup_after_processing(cur_dir, unprocessed_leaks)
+        else:
+            print("No more leaks to process")
+            end_time()
+    else:
+        print("No more leaks to process")
+        end_time()
+
+
 def run():
     """
     Run the feeder
@@ -312,63 +370,38 @@ def run():
             move_new_leak()
             leak_name = open(current_leak_filename, "r+").read()
             split(leak_name, chunk_size)
+            
+            # After processing, check if manifest is empty and clean up
+            if os.path.exists(manifest_file):
+                df = pd.read_csv(manifest_file)
+                if df.empty:
+                    cleanup_after_processing(cur_dir, unprocessed_leaks)
         else:
             if os.path.exists(manifest_file):
                 df = pd.read_csv(manifest_file)
                 if df.empty:
-                    print("Cleaning from the last task")
-                    
-                    # Delete the original leak file if configured
-                    if CONFIG.delete_splits_after_processing:
-                        leak_name_path = open(os.path.join(cur_dir, current_leak_filename), "r").read()
-                        if os.path.exists(leak_name_path):
-                            try:
-                                os.unlink(leak_name_path)
-                                print(f"[CLEANUP] Deleted original leak: {os.path.basename(leak_name_path)}")
-                            except Exception as e:
-                                print(f"[ERROR] Could not delete original leak: {e}")
-                    
-                    # Clean any remaining files in unprocessed_split
-                    folder_cleaner(os.path.join(cur_dir, unprocessed_leaks))
-                    
-                    # Fix: clean state and exit instead of recursing
-                    cur_leak_path = os.path.join(cur_dir, current_leak_filename)
-                    if os.path.exists(cur_leak_path):
-                        os.remove(cur_leak_path)
-                        print("[CLEANUP] Removed current_leak.txt")
-                    
-                    # Remove the processed leak from leak_list.csv
-                    leak_list_path = os.path.join(cur_dir, leak_list_filename)
-                    if os.path.exists(leak_list_path):
-                        df_leaks = pd.read_csv(leak_list_path)
-                        if not df_leaks.empty:
-                            df_leaks = df_leaks.iloc[1:]  # Remove first row
-                            df_leaks.to_csv(leak_list_path, index=False)
-                    
-                    print("Task finished (manifest empty). Checking for more leaks...")
-                    
-                    # Check if there are more leaks to process
-                    if update_leak_list():
-                        print("Found more leaks, continuing...")
-                        if move_new_leak():
-                            leak_name = open(current_leak_filename, "r+").read()
-                            split(leak_name, chunk_size)
-                        else:
-                            print("No more leaks to process")
-                            end_time()
-                    else:
-                        print("No more leaks to process")
-                        end_time()
-                    return
+                    cleanup_after_processing(cur_dir, unprocessed_leaks)
                 else:
                     print("Processing from the last task")
                     leak_name = open(current_leak_filename, "r+").read()
                     split(leak_name, chunk_size)
+                    
+                    # After processing, check if manifest is empty and clean up
+                    if os.path.exists(manifest_file):
+                        df = pd.read_csv(manifest_file)
+                        if df.empty:
+                            cleanup_after_processing(cur_dir, unprocessed_leaks)
             else:
                 if move_new_leak():
                     print("Processing new task")
                     leak_name = open(current_leak_filename, "r+").read()
                     split(leak_name, chunk_size)
+                    
+                    # After processing, check if manifest is empty and clean up
+                    if os.path.exists(manifest_file):
+                        df = pd.read_csv(manifest_file)
+                        if df.empty:
+                            cleanup_after_processing(cur_dir, unprocessed_leaks)
                 else:
                     if os.path.exists(os.path.join(cur_dir, current_leak_filename)):
                         os.remove(os.path.join(cur_dir, current_leak_filename))
