@@ -40,14 +40,26 @@ def if_binary_move(file_full_path, unprocessed_dir):
 def clean_filename(filename):
     """
     Render a valid filename for the feeder 
+    Preserves file extension
     """
-    # Remove whitespaces
-    cleaned_filename = filename.replace(' ', '-')
+    # Split filename and extension
+    name, ext = os.path.splitext(filename)
+    
+    # Remove whitespaces from name
+    cleaned_name = name.replace(' ', '-')
+    
     # Keep only valid ascii chars
-    cleaned_filename = unicodedata.normalize('NFKD', cleaned_filename).encode('ASCII', 'ignore').decode()
-    # Keep only whitelisted chars
-    cleaned = ''.join(c for c in cleaned_filename if c in WHITELISTED_FILENAME_CHARS)
-    return cleaned if cleaned else filename  # Fallback to original if empty
+    cleaned_name = unicodedata.normalize('NFKD', cleaned_name).encode('ASCII', 'ignore').decode()
+    
+    # Keep only whitelisted chars (add . for extension)
+    WHITELISTED_WITH_DOT = f"-()._ {string.ascii_letters}{string.digits}"
+    cleaned_name = ''.join(c for c in cleaned_name if c in WHITELISTED_WITH_DOT)
+    
+    # Reconstruct with extension
+    cleaned = cleaned_name + ext if ext else cleaned_name
+    
+    # Fallback to original if empty
+    return cleaned if cleaned else filename
 
 
 def is_compressed_file_ext(filename):
