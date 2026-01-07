@@ -54,18 +54,17 @@ def ail_publish(apikey, manifest_file, file_name, data=None):
             if data.get("status") == "success":
                 print(file_name + ": Successfully Pushed to Ail")
                 
-                # Delete the split file if configured
+                # Delete the split file immediately after successful push
                 if CONFIG.delete_splits_after_processing:
-                    file_by_number = re.findall(r"[-+]?\d*\.\d+|\d+", file_name.split('_')[1])
-                    file_to_del = file_name.split('_')[0] + "_" + str(int(file_by_number[0]) - 1)
-                    filepath = os.path.join(os.path.dirname(os.path.realpath(manifest_file)), file_to_del)
-                    if os.path.exists(filepath):
+                    split_filepath = os.path.join(os.path.dirname(os.path.realpath(manifest_file)), file_name)
+                    if os.path.exists(split_filepath):
                         try:
-                            os.unlink(filepath)
-                            print(f"[CLEANUP] Deleted split: {file_to_del}")
+                            os.unlink(split_filepath)
+                            print(f"[CLEANUP] Deleted split: {file_name}")
                         except Exception as e:
-                            print(f"[ERROR] Could not delete {file_to_del}: {e}")
+                            print(f"[ERROR] Could not delete {file_name}: {e}")
                 
+                # Remove from manifest
                 remove_split_manifest(manifest_file, "filename", file_name)
                 return True
             if data.get("status") == "error":
@@ -318,6 +317,18 @@ def run():
                 df = pd.read_csv(manifest_file)
                 if df.empty:
                     print("Cleaning from the last task")
+                    
+                    # Delete the original leak file if configured
+                    if CONFIG.delete_splits_after_processing:
+                        leak_name_path = open(os.path.join(cur_dir, current_leak_filename), "r").read()
+                        if os.path.exists(leak_name_path):
+                            try:
+                                os.unlink(leak_name_path)
+                                print(f"[CLEANUP] Deleted original leak: {os.path.basename(leak_name_path)}")
+                            except Exception as e:
+                                print(f"[ERROR] Could not delete original leak: {e}")
+                    
+                    # Clean any remaining files in unprocessed_split
                     folder_cleaner(os.path.join(cur_dir, unprocessed_leaks))
                     
                     # Fix: clean state and exit instead of recursing
